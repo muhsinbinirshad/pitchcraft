@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pitchcraft"
+version = "0.1.0"
+description = "AI proposal editor: Claude plans the edits, a deterministic engine applies them in your document's exact style."
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.11"
+dependencies = [
+  "anthropic>=2.8.0",
+  "fastapi>=0.115",
+  "uvicorn[standard]>=0.30",
+  "python-multipart>=0.0.9",
+  "lxml>=5.2",
+  "pydantic>=2.7",
+  "xlrd>=2.0.1",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "httpx>=0.27"]
+
+[project.scripts]
+pitchcraft = "pitchcraft.__main__:main"
+
+[tool.setuptools.packages.find]
+include = ["pitchcraft*"]

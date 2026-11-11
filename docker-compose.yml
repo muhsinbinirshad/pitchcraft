@@ -1,0 +1,36 @@
+# Pitchcraft with Docker Compose.
+#
+#   cp .env.example .env && chmod 600 .env   # optional: add a server-wide ANTHROPIC_API_KEY
+#   docker compose up -d --build
+#   open http://127.0.0.1:8600              # the first visit creates the admin account
+
+services:
+  pitchcraft:
+    build:
+      context: .
+      target: runtime
+    image: pitchcraft:latest
+    container_name: pitchcraft
+    restart: unless-stopped
+    ports:
+      # Bound to localhost. Put a reverse proxy with HTTPS in front to expose it.
+      - "127.0.0.1:${PITCHCRAFT_PORT:-8600}:8600"
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      # Set to 1 when serving over HTTPS (behind a reverse proxy).
+      PITCHCRAFT_SECURE_COOKIE: ${PITCHCRAFT_SECURE_COOKIE:-0}
+    volumes:
+      - pitchcraft-data:/data
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /home/pitchcraft
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+volumes:
+  pitchcraft-data:

@@ -1,0 +1,24 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+data/
+e2e_data/
+.env
+.env.*
+!.env.example
+frontend/.env*.local
+*.pem
+*.key
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+*.tmp
+.tools/
+
+# client material: never published
+private/*
+!private/README.md
+tests/fixtures/
+ui_shots/
+frontend/tsconfig.tsbuildinfo

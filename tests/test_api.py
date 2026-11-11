@@ -69,10 +69,21 @@ def env(tmp_path):
     calls: list = []
     svc = Service(Store(tmp_path), model_factory=lambda s: FakeModel(calls))
     c = TestClient(create_app(tmp_path, service=svc, auth_enabled=True))
-    assert c.get("/api/auth/me").json()["setup_needed"] is True
+    me = c.get("/api/auth/me").json()
+    assert me["setup_needed"] is False and me["default_login"] is True
     assert c.get("/api/proposals").status_code == 401
-    r = c.post("/api/auth/setup", json={"username": "admin", "password": "correct-horse"})
-    assert r.status_code == 200
+    # fresh install: admin / admin works, but only to change the password
+    r = c.post("/api/auth/login", json={"username": "admin", "password": "admin"})
+    assert r.status_code == 200 and r.json()["user"]["must_change"] is True
+    assert c.get("/api/proposals").status_code == 403
+    assert c.post("/api/auth/password", json={"old": "admin", "new": "admin"}).status_code == 400
+    assert c.post("/api/auth/password", json={"old": "admin", "new": "correct-horse"}).status_code == 200
+    assert c.get("/api/proposals").status_code == 200
+    me = c.get("/api/auth/me").json()
+    assert me["default_login"] is False and me["user"]["must_change"] is False
+    c.post("/api/auth/logout")
+    assert c.post("/api/auth/login", json={"username": "admin", "password": "admin"}).status_code == 401
+    assert c.post("/api/auth/login", json={"username": "admin", "password": "correct-horse"}).status_code == 200
     return c, calls, tmp_path
 
 

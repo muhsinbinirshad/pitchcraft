@@ -1,15 +1,29 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Icon } from "./Icon";
 import { TemplateCheck } from "./TemplateCheck";
 import { Button } from "./ui";
-import { api } from "@/lib/api";
+import { api, templatePage, templatePageCount } from "@/lib/api";
 import type { Inspection, Template } from "@/lib/types";
 
 const STEPS = ["Welcome", "Add your style", "Ready"];
 
-/** First-run tour. Shown while the library has no template: a style template is required before any proposal. */
+const HOW = [
+  { icon: "layers", title: "Add a style template", text: "One finished proposal (.docx). Its fonts, colours, spacing and tables become your house style." },
+  { icon: "chat", title: "Describe the proposal", text: "Type the client, scope and price, or attach the RFP and emails. Claude asks for anything missing." },
+  { icon: "checkCircle", title: "Review and send", text: "See every change, ask for edits, approve, then download the Word file." },
+];
+
+const TIPS = [
+  "A finished proposal your team already sent, not a draft",
+  "Has the parts you reuse: cover, headings, tables, pricing",
+  "No tracked changes or open comments",
+];
+
+/**
+ * First-run tour. It blocks the app while the library has no template, because every proposal needs one.
+ */
 export function Onboarding({ name, onDone }: { name: string; onDone: (go: boolean) => void }) {
   const [step, setStep] = useState(0);
   const [file, setFile] = useState<File | null>(null);
@@ -20,11 +34,27 @@ export function Onboarding({ name, onDone }: { name: string; onDone: (go: boolea
   const [over, setOver] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [added, setAdded] = useState<Template | null>(null);
+  const [cover, setCover] = useState<string | null>(null);
   const input = useRef<HTMLInputElement>(null);
+
+  // show the new template's cover once its preview has rendered
+  useEffect(() => {
+    if (!added) return;
+    let stop = false;
+    const tick = async (n: number) => {
+      const { count } = await templatePageCount(added.id).catch(() => ({ count: 0 }));
+      if (stop) return;
+      if (count > 0) setCover(templatePage(added.id, 1));
+      else if (n < 20) setTimeout(() => tick(n + 1), 1500);
+    };
+    tick(0);
+    return () => { stop = true; };
+  }, [added]);
 
   async function pick(f: File) {
     setErr(null);
     if (!f.name.toLowerCase().endsWith(".docx")) { setErr("Choose a Word document (.docx)."); return; }
+    if (f.size > 50 * 1024 * 1024) { setErr("That file is over 50 MB."); return; }
     setFile(f); setReport(null); setConfirmUse(false); setTname(f.name.replace(/\.docx$/i, ""));
     try { setReport(await api.inspectTemplate(f)); } catch (e) { setErr((e as Error).message); setFile(null); }
   }
@@ -36,52 +66,66 @@ export function Onboarding({ name, onDone }: { name: string; onDone: (go: boolea
       setAdded(t); setStep(2);
     } catch (e) { setErr((e as Error).message); } finally { setSaving(false); }
   }
-  const finish = (go: boolean) => onDone(go);
   const canAdd = Boolean(report) && report!.verdict !== "reject" && (report!.verdict !== "warn" || confirmUse);
 
   return (
     <div className="ob-scrim">
       <div className="ob" role="dialog" aria-modal="true" aria-label="Get started with Pitchcraft">
-        <div className="ob-steps" aria-label={`Step ${step + 1} of ${STEPS.length}`}>
-          {STEPS.map((s, i) => (
-            <span key={s} className={`ob-step ${i === step ? "on" : ""} ${i < step ? "done" : ""}`}>
-              <span className="ob-num">{i < step ? <Icon name="check" size={14} /> : i + 1}</span>{s}
-            </span>
-          ))}
+        <div className="ob-top">
+          <span className="ob-count">Step {step + 1} of {STEPS.length} · {STEPS[step]}</span>
         </div>
+        <div className="ob-bar" aria-hidden="true">{STEPS.map((s, i) => <span key={s} className={i <= step ? "on" : ""} />)}</div>
 
         {step === 0 ? (
           <div className="ob-body">
-            <span className="ob-hero"><Icon name="logo" size={30} /></span>
-            <h2>Welcome, {name.split(" ")[0]}</h2>
-            <p className="muted">Pitchcraft writes proposals that look exactly like your company&apos;s own. Before the first one, it needs one finished proposal to copy the style from.</p>
+            <div className="ob-head">
+              <span className="ob-hero"><Icon name="logo" size={26} /></span>
+              <div>
+                <h2>Welcome, {name.split(" ")[0]}</h2>
+                <p className="muted">Proposals in your company&apos;s exact style, written from a chat.</p>
+              </div>
+            </div>
             <ol className="ob-how">
-              <li><span className="ob-ic"><Icon name="layers" size={20} /></span><span><b>Add a style template</b><span className="small muted">Any finished proposal (.docx). Fonts, colours, spacing and tables are kept.</span></span></li>
-              <li><span className="ob-ic"><Icon name="chat" size={20} /></span><span><b>Describe the proposal in chat</b><span className="small muted">Paste the RFP, emails or notes. Claude asks for anything missing.</span></span></li>
-              <li><span className="ob-ic"><Icon name="checkCircle" size={20} /></span><span><b>Review and approve</b><span className="small muted">See every change, ask for edits, then download the Word file.</span></span></li>
+              {HOW.map((h, i) => (
+                <li key={h.title}>
+                  <span className="ob-dot">{i + 1}</span>
+                  <span className="ob-how-text"><b>{h.title}</b><span>{h.text}</span></span>
+                </li>
+              ))}
             </ol>
-            <div className="ob-actions"><span className="grow" /><Button onClick={() => setStep(1)}>Get started</Button></div>
+            <div className="ob-actions">
+              <span className="small muted"><Icon name="clock" size={14} /> About a minute to set up</span>
+              <span className="grow" />
+              <Button onClick={() => setStep(1)} autoFocus>Get started</Button>
+            </div>
           </div>
         ) : null}
 
         {step === 1 ? (
           <div className="ob-body">
-            <h2>Add your first style template</h2>
-            <p className="muted">Pick a proposal your team already sent. Only its look is used; its content is replaced in every new proposal.</p>
+            <div>
+              <h2>Add your style template</h2>
+              <p className="muted">Only its look is used. Its content is replaced in every new proposal.</p>
+            </div>
             {!file ? (
-              <button type="button" className={`ob-drop ${over ? "over" : ""}`} onClick={() => input.current?.click()}
-                onDragOver={(e) => { e.preventDefault(); setOver(true); }} onDragLeave={() => setOver(false)}
-                onDrop={(e) => { e.preventDefault(); setOver(false); const f = e.dataTransfer.files[0]; if (f) pick(f); }}>
-                <span className="greet-mark" style={{ width: 52, height: 52 }}><Icon name="upload" size={22} /></span>
-                <b>Choose or drop a .docx proposal</b>
-                <span className="small muted">It&apos;s checked first to make sure it&apos;s a proposal.</span>
-              </button>
+              <>
+                <button type="button" className={`ob-drop ${over ? "over" : ""}`} onClick={() => input.current?.click()}
+                  onDragOver={(e) => { e.preventDefault(); setOver(true); }} onDragLeave={() => setOver(false)}
+                  onDrop={(e) => { e.preventDefault(); setOver(false); const f = e.dataTransfer.files[0]; if (f) pick(f); }}>
+                  <span className="ob-drop-ic"><Icon name="upload" size={22} /></span>
+                  <b>Drop a proposal here, or browse</b>
+                  <span className="small muted">.docx · up to 50 MB · checked before it&apos;s added</span>
+                </button>
+                <ul className="ob-tips">
+                  {TIPS.map((t) => <li key={t}><Icon name="check" size={16} />{t}</li>)}
+                </ul>
+              </>
             ) : (
               <div className="col" style={{ gap: 12 }}>
-                <div className="row"><Icon name="docText" /><b className="ellipsis grow">{file.name}</b>
-                  <button className="btn text sm" onClick={() => { setFile(null); setReport(null); }}>Choose another</button></div>
+                <div className="ob-file"><Icon name="docText" /><b className="ellipsis grow">{file.name}</b>
+                  <button className="btn text sm" onClick={() => { setFile(null); setReport(null); }}>Change</button></div>
                 <TemplateCheck report={report} fileName={file.name} />
-                {report && report.verdict !== "reject" ? <div className="field"><label htmlFor="ob-tn">Name</label><input id="ob-tn" className="input sm" value={tname} onChange={(e) => setTname(e.target.value)} /></div> : null}
+                {report && report.verdict !== "reject" ? <div className="field"><label htmlFor="ob-tn">Template name</label><input id="ob-tn" className="input sm" value={tname} onChange={(e) => setTname(e.target.value)} /></div> : null}
                 {report?.verdict === "warn" ? <label className="row small"><input type="checkbox" className="checkbox" checked={confirmUse} onChange={(e) => setConfirmUse(e.target.checked)} />I checked this document and want to use it anyway</label> : null}
               </div>
             )}
@@ -97,13 +141,23 @@ export function Onboarding({ name, onDone }: { name: string; onDone: (go: boolea
 
         {step === 2 ? (
           <div className="ob-body">
-            <span className="ob-hero ok"><Icon name="checkCircle" size={30} /></span>
-            <h2>Your style is ready</h2>
-            <p className="muted">“{added?.name}” is your default template. New proposals copy its look. You can add more styles any time from Templates.</p>
+            <div className="ob-done">
+              <div className="ob-cover">
+                {cover
+                  // eslint-disable-next-line @next/next/no-img-element
+                  ? <img src={cover} alt={`First page of ${added?.name}`} />
+                  : <span className="ob-cover-wait"><><Icon name="spinner" size={20} />Rendering preview…</></span>}
+              </div>
+              <div className="col" style={{ gap: 8 }}>
+                <span className="ob-ok"><Icon name="checkCircle" size={18} />Template added</span>
+                <h2>Your style is ready</h2>
+                <p className="muted">“{added?.name}” is now your default template. Every new proposal copies its look. Add more styles any time from Templates.</p>
+              </div>
+            </div>
             <div className="ob-actions">
-              <Button variant="text" onClick={() => finish(false)}>Look around first</Button>
+              <Button variant="text" onClick={() => onDone(false)}>Look around first</Button>
               <span className="grow" />
-              <Button icon="sparkle" onClick={() => finish(true)}>Create your first proposal</Button>
+              <Button icon="sparkle" onClick={() => onDone(true)}>Create your first proposal</Button>
             </div>
           </div>
         ) : null}

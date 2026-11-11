@@ -141,5 +141,5 @@ export interface HistoryItem {
   usage: Record<string, number>;
 }
 
-export interface User { username: string; admin: boolean; display_name?: string; created?: number }
+export interface User { username: string; admin: boolean; display_name?: string; created?: number; must_change?: boolean }
 export interface Health { ok: boolean; renderer: boolean; renderer_missing?: string[]; server_key: boolean; models: Record<string, string>; auth: boolean }

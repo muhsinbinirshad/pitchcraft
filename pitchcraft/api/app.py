@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import time
 from pathlib import Path
@@ -106,6 +107,7 @@ def _form_settings(model: str, effort: str, auto_apply: str, review: str, visual
 
 
 _render_lock = render_lock
+log = logging.getLogger("pitchcraft")
 
 
 def create_app(data_dir: Path | None = None, service: Service | None = None, auth_enabled: bool | None = None) -> FastAPI:
@@ -116,6 +118,8 @@ def create_app(data_dir: Path | None = None, service: Service | None = None, aut
     auth = Auth(data_dir)
     if auth_enabled is None:
         auth_enabled = os.environ.get("PITCHCRAFT_AUTH", "on").lower() not in ("off", "0", "false")
+    if auth_enabled and auth.ensure_default_admin():
+        log.warning("Created the default login admin / admin. It must be changed at first sign-in.")
     secure_cookie = _truthy(os.environ.get("PITCHCRAFT_SECURE_COOKIE", ""))
     svc.migrate_orphan_jobs()
     app = FastAPI(title="Pitchcraft", version="0.2.0")
@@ -136,6 +140,9 @@ def create_app(data_dir: Path | None = None, service: Service | None = None, aut
         user = auth.verify(request.cookies.get(COOKIE))
         if user is None:
             raise HTTPException(401, "Sign in required")
+        # the default password unlocks nothing but changing it
+        if user.get("must_change") and not request.url.path.startswith("/api/auth/"):
+            raise HTTPException(403, "Change the default password first")
         return user
 
     def admin_user(user: dict = Depends(current_user)) -> dict:
@@ -151,7 +158,8 @@ def create_app(data_dir: Path | None = None, service: Service | None = None, aut
     def me(request: Request):
         if not auth_enabled:
             return {"user": {"username": "local", "admin": True}, "setup_needed": False, "auth": False}
-        return {"user": auth.verify(request.cookies.get(COOKIE)), "setup_needed": not auth.has_users(), "auth": True}
+        return {"user": auth.verify(request.cookies.get(COOKIE)), "setup_needed": not auth.has_users(), "auth": True,
+                "default_login": auth.default_login_active()}
 
     @app.post("/api/auth/setup")
     def setup(req: LoginRequest, resp: Response):

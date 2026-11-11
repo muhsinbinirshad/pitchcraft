@@ -64,8 +64,8 @@ export function Empty({ icon, title, children }: { icon: string; title: string; 
   );
 }
 
-export function Dialog({ open, onClose, title, children, actions, wide }:
-  { open: boolean; onClose: () => void; title?: string; children: ReactNode; actions?: ReactNode; wide?: boolean }) {
+export function Dialog({ open, onClose, title, children, actions, wide, className = "" }:
+  { open: boolean; onClose: () => void; title?: string; children: ReactNode; actions?: ReactNode; wide?: boolean; className?: string }) {
   useEffect(() => {
     if (!open) return;
     const k = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
@@ -75,7 +75,7 @@ export function Dialog({ open, onClose, title, children, actions, wide }:
   if (!open) return null;
   return (
     <div className="scrim" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className={`dialog ${wide ? "wide" : ""}`} role="dialog" aria-modal="true" aria-label={title}>
+      <div className={`dialog ${wide ? "wide" : ""} ${className}`} role="dialog" aria-modal="true" aria-label={title}>
         {title ? <div className="row"><h2 className="grow">{title}</h2><IconButton icon="x" label="Close" onClick={onClose} /></div> : null}
         {children}
         {actions ? <div className="dialog-actions">{actions}</div> : null}

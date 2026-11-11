@@ -123,7 +123,7 @@ export default function NewProposal() {
         <div className="greet">
           <span className="greet-mark"><Icon name="sparkle" size={26} /></span>
           <h1>{user ? `Hi ${displayName(user).split(" ")[0]}, ` : ""}<span className="grad">what are we proposing?</span></h1>
-          <p className="muted">Tell me the client, services, scope, timeline and price in your own words. I write it in your template&apos;s exact style and point out anything missing.</p>
+          <p className="muted">Describe the client, scope, timeline and price, or attach the RFP. I&apos;ll write it in your template&apos;s style and ask about anything missing.</p>
         </div>
 
         <div className={`cbox ${over ? "over" : ""}`}
@@ -220,7 +220,7 @@ export default function NewProposal() {
         )}
       </Dialog>
 
-      <Dialog open={pickModal} onClose={() => setPickModal(false)} title="Choose a template"
+      <Dialog open={pickModal} onClose={() => setPickModal(false)} title="Choose a template" className="dialog-picker"
         actions={<>
           <Button variant="text" icon="upload" onClick={() => { setPickModal(false); setTplModal(true); }}>Upload a new style</Button>
           <Button onClick={() => setPickModal(false)}>Done</Button>

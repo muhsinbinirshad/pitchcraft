@@ -1,8 +1,9 @@
 """Username/password login with signed session cookies.
 
 Users live in <data>/users.json with PBKDF2-SHA256 hashes. The signing
-secret is generated once into <data>/secret.key. The first visit creates the
-admin account (setup); after that, only admins can add users.
+secret is generated once into <data>/secret.key. A fresh install gets the
+default login admin / admin, which must be changed at first sign-in; after
+that, only admins can add users.
 """
 
 from __future__ import annotations
@@ -22,6 +23,8 @@ SESSION_TTL = 14 * 24 * 3600
 _ITER = 240_000
 _LOCK = threading.RLock()
 _NAME = re.compile(r"^[A-Za-z0-9._@-]{3,64}$")
+DEFAULT_USER = "admin"
+DEFAULT_PASSWORD = "admin"
 
 
 class AuthError(Exception):
@@ -66,10 +69,24 @@ class Auth:
     def has_users(self) -> bool:
         return bool(self._load())
 
+    def ensure_default_admin(self) -> bool:
+        """Fresh install: create admin / admin, flagged so the password must be changed at first sign-in."""
+        with _LOCK:
+            if self._load():
+                return False
+            self._save({DEFAULT_USER: {"hash": _hash(DEFAULT_PASSWORD, secrets.token_bytes(16)), "admin": True,
+                                       "created": time.time(), "must_change": True}})
+            return True
+
+    def default_login_active(self) -> bool:
+        """True while the untouched default admin account still exists."""
+        u = self._load().get(DEFAULT_USER)
+        return bool(u and u.get("must_change"))
+
     def public(self, username: str) -> dict:
         u = self._load().get(username, {})
         return {"username": username, "admin": u.get("admin", False), "display_name": u.get("display_name") or "",
-                "created": u.get("created")}
+                "created": u.get("created"), "must_change": bool(u.get("must_change"))}
 
     def list_users(self) -> list[dict]:
         return [self.public(u) for u in sorted(self._load())]
@@ -126,7 +143,10 @@ class Auth:
             u = users.get(username)
             if u is None or (old is not None and not _verify(old, u["hash"])):
                 raise AuthError("Current password is wrong")
+            if _verify(new, u["hash"]) or new == DEFAULT_PASSWORD:
+                raise AuthError("Choose a new password that is different from the current one")
             u["hash"] = _hash(new, secrets.token_bytes(16))
+            u.pop("must_change", None)
             u["sessions_after"] = time.time()  # log out other sessions
             self._save(users)
 
@@ -160,4 +180,5 @@ class Auth:
         u = self._load().get(username)
         if u is None or int(issued) < u.get("sessions_after", 0) - 1:
             return None
-        return {"username": username, "admin": u.get("admin", False), "display_name": u.get("display_name") or ""}
+        return {"username": username, "admin": u.get("admin", False), "display_name": u.get("display_name") or "",
+                "must_change": bool(u.get("must_change"))}

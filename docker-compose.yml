@@ -2,7 +2,7 @@
 #
 #   cp .env.example .env && chmod 600 .env   # optional: add a server-wide ANTHROPIC_API_KEY
 #   docker compose up -d --build
-#   open http://127.0.0.1:8600              # the first visit creates the admin account
+#   open http://127.0.0.1:8600              # sign in with admin / admin, then set a new password
 
 services:
   pitchcraft:

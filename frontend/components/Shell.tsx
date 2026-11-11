@@ -152,16 +152,17 @@ function Frame({ children }: { children: ReactNode }) {
     api.health().then(setHealth).catch(() => {});
     api.me().then((m) => {
       if (!m.user && !isAuthPage) { router.replace(m.setup_needed ? "/login/?setup=1" : "/login/"); return; }
+      if (m.user?.must_change && !isAuthPage) { router.replace("/login/?change=1"); return; }
       setUser(m.user);
       setReady(true);
     }).catch(() => setReady(true));
   }, [isAuthPage, router]);
 
   const refreshRecent = useCallback(() => { api.proposals().then(setRecent).catch(() => {}); }, []);
-  useEffect(() => { if (ready && user) refreshRecent(); }, [ready, user, path, refreshRecent]);
+  useEffect(() => { if (ready && user && !user.must_change && !isAuthPage) refreshRecent(); }, [ready, user, path, refreshRecent, isAuthPage]);
   useEffect(() => { setNavOpen(false); }, [path]);
   // first run: no style template yet, so the tour blocks the app until one is added
-  useEffect(() => { if (ready && user) api.templates().then((t) => setNeedsStyle(t.length === 0)).catch(() => {}); }, [ready, user, path]);
+  useEffect(() => { if (ready && user && !user.must_change && !isAuthPage) api.templates().then((t) => setNeedsStyle(t.length === 0)).catch(() => {}); }, [ready, user, path, isAuthPage]);
   useEffect(() => {
     const k = (e: KeyboardEvent) => {
       if (e.key === "Escape") setImg(null);

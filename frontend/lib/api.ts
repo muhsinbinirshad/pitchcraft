@@ -43,7 +43,7 @@ const enc = encodeURIComponent;
 export const api = {
   health: () => call<Health>("/api/health"),
   // auth
-  me: () => call<{ user: User | null; setup_needed: boolean; auth: boolean }>("/api/auth/me"),
+  me: () => call<{ user: User | null; setup_needed: boolean; auth: boolean; default_login?: boolean }>("/api/auth/me"),
   setup: (username: string, password: string) => call<{ user: User }>("/api/auth/setup", { method: "POST", json: { username, password } }),
   login: (username: string, password: string) => call<{ user: User }>("/api/auth/login", { method: "POST", json: { username, password } }),
   logout: () => call("/api/auth/logout", { method: "POST" }),

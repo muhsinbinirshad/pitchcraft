@@ -150,5 +150,5 @@ Pitchcraft is ready. Start it with:
 
   .venv/bin/pitchcraft serve --data data
 
-Then open http://127.0.0.1:8600. The first visit creates the admin account.
+Then open http://127.0.0.1:8600 and sign in with admin / admin. You'll be asked to set a new password.
 EOF

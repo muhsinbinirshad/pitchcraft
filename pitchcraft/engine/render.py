@@ -10,14 +10,17 @@ import threading
 from dataclasses import dataclass, field
 from pathlib import Path
 
-_LOCKS: dict[str, threading.Lock] = {}
+_LOCKS: dict[str, threading.RLock] = {}
 _LOCKS_GUARD = threading.Lock()
 
 
-def render_lock(out_dir: Path) -> threading.Lock:
-    """One render at a time per output folder. Two LibreOffice runs writing the same folder corrupt each other."""
+def render_lock(out_dir: Path) -> threading.RLock:
+    """One render at a time per output folder. Two LibreOffice runs writing the same folder corrupt each other.
+
+    render() takes this lock itself; callers may also hold it (it is re-entrant) to make "render if missing" atomic.
+    """
     with _LOCKS_GUARD:
-        return _LOCKS.setdefault(str(Path(out_dir).resolve()), threading.Lock())
+        return _LOCKS.setdefault(str(Path(out_dir).resolve()), threading.RLock())
 
 
 class RenderError(Exception):
@@ -227,6 +230,11 @@ def _soffice() -> str:
 
 
 def render(docx: Path, out_dir: Path, dpi: int = 70, timeout: int = 240) -> Rendered:
+    with render_lock(out_dir):
+        return _render(docx, out_dir, dpi, timeout)
+
+
+def _render(docx: Path, out_dir: Path, dpi: int, timeout: int) -> Rendered:
     out_dir.mkdir(parents=True, exist_ok=True)
     # separate profile dir so parallel renders don't fight over a lock; it is also
     # HOME, so fontconfig picks up the document's embedded fonts from ~/.fonts

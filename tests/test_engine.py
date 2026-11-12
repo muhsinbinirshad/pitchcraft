@@ -235,3 +235,29 @@ def test_doctor_reports_missing_tools(tmp_path, monkeypatch, capsys):
     assert doctor.run(data=tmp_path / "data") == 1
     out = capsys.readouterr().out
     assert "libreoffice" in out and "not found" in out and "Fix:" in out
+
+
+def test_concurrent_renders_of_one_folder_do_not_collide(tmp_path):
+    """A background preview render and a browser request for the same folder must not run LibreOffice at once."""
+    import threading
+    from pitchcraft.engine import render as r
+
+    active, peak = [0], [0]
+    gate = threading.Lock()
+
+    def fake(docx, out_dir, dpi, timeout):
+        with gate:
+            active[0] += 1; peak[0] = max(peak[0], active[0])
+        import time; time.sleep(0.05)
+        with gate:
+            active[0] -= 1
+        return None
+
+    orig = r._render
+    r._render = fake
+    try:
+        ts = [threading.Thread(target=r.render, args=(tmp_path / "a.docx", tmp_path / "out")) for _ in range(4)]
+        [t.start() for t in ts]; [t.join() for t in ts]
+    finally:
+        r._render = orig
+    assert peak[0] == 1

@@ -51,6 +51,8 @@ export default function NewProposal() {
   // base document: the default company template, or a new style uploaded here
   const [templateId, setTemplateId] = useState<string | null>(null);
   const [styleFile, setStyleFile] = useState<File | null>(null);
+  // an existing proposal (made anywhere) to edit in place: only the requested changes are made
+  const [editFile, setEditFile] = useState<File | null>(null);
   const [report, setReport] = useState<Inspection | null>(null);
   const [checking, setChecking] = useState(false);
   const [confirmUse, setConfirmUse] = useState(false);
@@ -67,6 +69,7 @@ export default function NewProposal() {
   const [busy, setBusy] = useState(false);
   const attachRef = useRef<HTMLInputElement>(null);
   const styleRef = useRef<HTMLInputElement>(null);
+  const editRef = useRef<HTMLInputElement>(null);
   const ta = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
@@ -88,9 +91,16 @@ export default function NewProposal() {
 
   const tpl = templates.find((t) => t.id === templateId) || null;
   const alt = templates.find((t) => t.id === altId) || null;
-  const source: "template" | "library" | "newstyle" = styleFile ? "newstyle" : alt ? "library" : "template";
+  const source: "template" | "library" | "newstyle" | "edit" = editFile ? "edit" : styleFile ? "newstyle" : alt ? "library" : "template";
   const styleReady = source !== "newstyle" || (report && report.verdict !== "reject" && (report.verdict !== "warn" || confirmUse));
-  const canSend = !busy && (text.trim().length > 0 || files.length > 0) && (source !== "template" || templateId) && Boolean(styleReady);
+  const canSend = !busy && (text.trim().length > 0 || files.length > 0) && (source !== "template" || templateId) && Boolean(styleReady)
+    && (source !== "edit" || text.trim().length > 0);
+
+  function pickEdit(f: File) {
+    if (!f.name.toLowerCase().endsWith(".docx")) { toast("Choose a Word document (.docx)"); return; }
+    setEditFile(f); setStyleFile(null); setReport(null); setAltId(null);
+    ta.current?.focus();
+  }
 
   async function pickStyle(f: File) {
     if (!f.name.toLowerCase().endsWith(".docx")) { toast("Choose a Word document (.docx)"); return; }
@@ -105,10 +115,15 @@ export default function NewProposal() {
     setBusy(true);
     try {
       const fd = new FormData();
-      let tid = source === "library" ? alt!.id : templateId!;
-      if (source === "newstyle") tid = (await api.addTemplate(styleFile!, styleFile!.name.replace(/\.docx$/i, ""), report?.verdict === "warn")).id;
-      fd.append("template_id", tid);
-      fd.append("mode", "new");
+      if (source === "edit") {
+        fd.append("base", editFile!);
+        fd.append("mode", "edit");
+      } else {
+        let tid = source === "library" ? alt!.id : templateId!;
+        if (source === "newstyle") tid = (await api.addTemplate(styleFile!, styleFile!.name.replace(/\.docx$/i, ""), report?.verdict === "warn")).id;
+        fd.append("template_id", tid);
+        fd.append("mode", "new");
+      }
       fd.append("instructions", text);
       files.forEach((f) => fd.append("inputs", f));
       const prop = await api.createProposal(fd, true);
@@ -122,8 +137,10 @@ export default function NewProposal() {
       <div className="chat-center">
         <div className="greet">
           <span className="greet-mark"><Icon name="sparkle" size={26} /></span>
-          <h1>{user ? `Hi ${displayName(user).split(" ")[0]}, ` : ""}<span className="grad">what are we proposing?</span></h1>
-          <p className="muted">Describe the client, scope, timeline and price, or attach the RFP. I&apos;ll write it in your template&apos;s style and ask about anything missing.</p>
+          <h1>{user ? `Hi ${displayName(user).split(" ")[0]}, ` : ""}<span className="grad">{source === "edit" ? "what should we change?" : "what are we proposing?"}</span></h1>
+          <p className="muted">{source === "edit"
+            ? <>Describe the client&apos;s changes. I&apos;ll edit <b>{editFile!.name}</b> and keep everything else exactly as it is.</>
+            : <>Describe the client, scope, timeline and price, or attach the RFP. I&apos;ll write it in your template&apos;s style and ask about anything missing.</>}</p>
         </div>
 
         <div className={`cbox ${over ? "over" : ""}`}
@@ -143,13 +160,21 @@ export default function NewProposal() {
           ) : null}
 
           <textarea ref={ta} value={text} onChange={(e) => setText(e.target.value)} aria-label="Message" autoFocus
-            placeholder="e.g. Create a proposal for ABC Group: external VAPT of 2 web apps, internal VAPT of 180 assets, 4 weeks, AED 39,500…"
+            placeholder={source === "edit"
+              ? "e.g. Add a web application pentest for AED 6,000, extend the timeline to 10 weeks and update the totals…"
+              : "e.g. Create a proposal for ABC Group: external VAPT of 2 web apps, internal VAPT of 180 assets, 4 weeks, AED 39,500…"}
             onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); send(); } }} />
 
           <div className="cbar">
             <button type="button" className="cbtn round" aria-label="Attach files" title="Attach emails, screenshots, RFPs, Excel sheets, slides or notes" onClick={() => attachRef.current?.click()}><Icon name="paperclip" size={19} /></button>
 
-            {source === "newstyle" ? (
+            {source === "edit" ? (
+              <span className="cbtn accent" title="Editing this proposal in place">
+                <Icon name="edit" size={16} />
+                <span className="chip-link ellipsis">{editFile!.name.replace(/\.docx$/i, "")}</span>
+                <button type="button" className="chip-x" aria-label="Stop editing this file" onClick={() => setEditFile(null)}><Icon name="x" size={14} /></button>
+              </span>
+            ) : source === "newstyle" ? (
               <span className="cbtn accent" title="New style for this proposal">
                 <Icon name={checking ? "spinner" : report?.verdict === "reject" ? "error" : "upload"} size={16} />
                 <button type="button" className="chip-link ellipsis" onClick={() => setTplModal(true)}>{checking ? "Checking…" : styleFile!.name.replace(/\.docx$/i, "")}</button>
@@ -160,9 +185,14 @@ export default function NewProposal() {
                 <Icon name="layers" size={16} /><span className="ellipsis">{(alt || tpl)?.name || "Choose a template"}</span><Icon name="chevronDown" size={16} />
               </button>
             )}
-            {source !== "newstyle" ? (
+            {source !== "newstyle" && source !== "edit" ? (
               <button type="button" className="cbtn ghost" onClick={() => setTplModal(true)} title="Upload a proposal with a different style">
                 <Icon name="upload" size={16} />New style
+              </button>
+            ) : null}
+            {source !== "edit" && source !== "newstyle" ? (
+              <button type="button" className="cbtn ghost" onClick={() => editRef.current?.click()} title="Upload a proposal you already have (.docx) and edit it in place">
+                <Icon name="edit" size={16} />Edit existing
               </button>
             ) : null}
 
@@ -171,7 +201,7 @@ export default function NewProposal() {
               <button type="button" className="cbtn round ghost" aria-label="Options" title="Options" onClick={() => setOptsOpen((v) => !v)}><Icon name="sliders" size={18} /></button>
               <Pop open={optsOpen} onClose={() => setOptsOpen(false)} align="right" width={320}><RunOptions /></Pop>
             </div>
-            <button type="button" className="send" disabled={!canSend} onClick={send} aria-label="Create proposal" title="Create proposal (Enter)">
+            <button type="button" className="send" disabled={!canSend} onClick={send} aria-label={source === "edit" ? "Edit proposal" : "Create proposal"} title={source === "edit" ? "Make these changes (Enter)" : "Create proposal (Enter)"}>
               {busy ? <Icon name="spinner" size={18} /> : <Icon name="arrowUp" size={20} />}
             </button>
           </div>
@@ -186,6 +216,7 @@ export default function NewProposal() {
       </div>
 
       <input ref={attachRef} type="file" multiple accept={ACCEPT} hidden onChange={(e) => { const l = Array.from(e.target.files || []); if (l.length) setFiles((x) => [...x, ...l]); e.target.value = ""; }} />
+      <input ref={editRef} type="file" accept=".docx" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) pickEdit(f); e.target.value = ""; }} />
       <input ref={styleRef} type="file" accept=".docx" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) pickStyle(f); e.target.value = ""; }} />
 
       <Dialog open={tplModal} onClose={() => setTplModal(false)} title="Use a new style"

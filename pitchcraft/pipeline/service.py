@@ -85,6 +85,19 @@ class Service:
     def __init__(self, store: Store, model_factory: ModelFactory = default_model_factory):
         self.store = store
         self.model_factory = model_factory
+        self.recover_interrupted()
+
+    def recover_interrupted(self) -> int:
+        """Jobs run in background threads, so a restart kills them mid-way. Mark them failed so they can be retried."""
+        n = 0
+        for j in self.store.list_jobs():
+            if j.get("status") in ("planning", "applying"):
+                self.store.update_job(j["id"], status="error", stage="",
+                                      error="The server restarted while this was running. Nothing was changed. Try again.")
+                n += 1
+        if n:
+            log.warning("marked %d interrupted job(s) as failed after a restart", n)
+        return n
 
     # ---------- turns (jobs) ----------
     def create_job(self, *, mode: str, title: str, instructions: str, base_name: str, base_bytes: bytes,
@@ -200,7 +213,9 @@ class Service:
 
         def work():
             try:
-                render(d / "v0.docx", d / "v0_render", dpi=110)
+                with render_lock(d / "v0_render"):
+                    if not any((d / "v0_render").glob("page-*.png")):
+                        render(d / "v0.docx", d / "v0_render", dpi=110)
             except Exception:  # noqa: BLE001
                 log.warning("render failed for proposal %s v0", pid)
         threading.Thread(target=work, daemon=True).start()
@@ -473,7 +488,25 @@ class Service:
 
     # ---------- template checks ----------
     def inspect_template(self, data: bytes, name: str, settings: dict | None) -> dict:
-        """Structure check, then (when a key is available) Claude's verdict."""
+        """Structure check, then (when a key is available) Claude's verdict.
+
+        The upload dialog checks the file, then "Add" sends the same file again; the report is cached by
+        content hash so Claude is only asked once per file.
+        """
+        import hashlib
+
+        key = hashlib.sha256(data).hexdigest()
+        cache = self.__dict__.setdefault("_inspect_cache", {})
+        hit = cache.get(key)
+        if hit and time.time() - hit[0] < 3600 and (hit[1]["ai"] is not None or settings is None):
+            return hit[1]
+        report = self._inspect_template(data, name, settings)
+        if len(cache) > 32:
+            cache.pop(next(iter(cache)))
+        cache[key] = (time.time(), report)
+        return report
+
+    def _inspect_template(self, data: bytes, name: str, settings: dict | None) -> dict:
         from ..ai import check_document
         from ..engine.inspect import inspect_docx
 

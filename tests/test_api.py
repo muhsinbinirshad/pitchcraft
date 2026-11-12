@@ -203,3 +203,33 @@ def test_bad_requests(env):
     assert c.post("/api/proposals", data={"mode": "new"}).status_code == 400
     assert c.get("/api/jobs/../../etc").status_code == 404
     assert c.get("/api/proposals/zzzzzzzzzzzz").status_code == 404
+
+
+def test_template_check_runs_once_per_file(tmp_path, monkeypatch):
+    """The upload dialog checks a file, then Add sends it again: Claude must only be asked once."""
+    svc = Service(Store(tmp_path), model_factory=lambda s: FakeModel([]))
+    runs = []
+    monkeypatch.setattr(svc, "_inspect_template", lambda data, name, settings: runs.append(name) or {"ai": {"is_proposal": True}, "verdict": "ok"})
+    svc.inspect_template(b"same file", "a.docx", {"api_key": None})
+    svc.inspect_template(b"same file", "a.docx", {"api_key": None})
+    assert runs == ["a.docx"]
+    svc.inspect_template(b"other file", "b.docx", {"api_key": None})
+    assert runs == ["a.docx", "b.docx"]
+
+
+def test_jobs_interrupted_by_restart_become_retryable(tmp_path):
+    store = Store(tmp_path)
+    svc = Service(store, model_factory=lambda s: FakeModel([]))
+    buf = io.BytesIO()
+    import zipfile as _z
+    with _z.ZipFile(buf, "w") as z:
+        z.writestr("[Content_Types].xml", '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"/>')
+        z.writestr("word/document.xml", '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body/></w:document>')
+    try:
+        job = svc.create_job(mode="new", title="t", instructions="x", base_name="b.docx", base_bytes=buf.getvalue(), inputs=[])
+    except Exception:
+        pytest.skip("minimal docx not accepted by the loader")
+    store.update_job(job["id"], status="planning", stage="Claude is planning")
+    Service(store, model_factory=lambda s: FakeModel([]))  # a restart
+    j = store.get_job(job["id"])
+    assert j["status"] == "error" and "restarted" in j["error"]
